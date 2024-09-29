@@ -1,64 +1,14 @@
-/*******************************************************************************
-* Copyright (c) 2023, STMicroelectronics - All Rights Reserved
-*
-* This file is part of the VL53L8CX Ultra Lite Driver and is dual licensed,
-* either 'STMicroelectronics Proprietary license'
-* or 'BSD 3-clause "New" or "Revised" License' , at your option.
-*
-********************************************************************************
-*
-* 'STMicroelectronics Proprietary license'
-*
-********************************************************************************
-*
-* License terms: STMicroelectronics Proprietary in accordance with licensing
-* terms at www.st.com/sla0081
-*
-* STMicroelectronics confidential
-* Reproduction and Communication of this document is strictly prohibited unless
-* specifically authorized in writing by STMicroelectronics.
-*
-*
-********************************************************************************
-*
-* Alternatively, the VL53L8CX Ultra Lite Driver may be distributed under the
-* terms of 'BSD 3-clause "New" or "Revised" License', in which case the
-* following provisions apply instead of the ones mentioned above :
-*
-********************************************************************************
-*
-* License terms: BSD 3-clause "New" or "Revised" License.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*
-* 1. Redistributions of source code must retain the above copyright notice, this
-* list of conditions and the following disclaimer.
-*
-* 2. Redistributions in binary form must reproduce the above copyright notice,
-* this list of conditions and the following disclaimer in the documentation
-* and/or other materials provided with the distribution.
-*
-* 3. Neither the name of the copyright holder nor the names of its contributors
-* may be used to endorse or promote products derived from this software
-* without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-* AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-* SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-* CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-* OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*
-*
-*******************************************************************************/
+/**
+  *
+  * Copyright (c) 2021 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
 
 #ifndef _PLATFORM_H_
 #define _PLATFORM_H_
@@ -66,7 +16,10 @@
 
 #include <stdint.h>
 #include <string.h>
-#include "stm32f4xx.h"
+
+typedef int32_t (*VL53L8CX_get_tick_Func)(void);
+typedef int32_t (*VL53L8CX_write_Func)(uint16_t, uint16_t, uint8_t *, uint16_t);
+typedef int32_t (*VL53L8CX_read_Func)(uint16_t, uint16_t, uint8_t *, uint16_t);
 
 /**
  * @brief Structure VL53L8CX_Platform needs to be filled by the customer,
@@ -81,19 +34,21 @@ typedef struct
 	/* To be filled with customer's platform. At least an I2C address/descriptor
 	 * needs to be added */
 	/* Example for most standard platform : I2C address of sensor */
-    uint16_t  			address;
-
+    uint16_t address;
+    VL53L8CX_write_Func Write;
+    VL53L8CX_read_Func Read;
+    VL53L8CX_get_tick_Func GetTick;
 } VL53L8CX_Platform;
 
 /*
  * @brief The macro below is used to define the number of target per zone sent
  * through I2C. This value can be changed by user, in order to tune I2C
  * transaction, and also the total memory size (a lower number of target per
- * zone means a lower RAM). The value must be between 1 and 4.
+ * zone means a lower RAM usage).
  */
-
-#define 	VL53L8CX_NB_TARGET_PER_ZONE		1U
-
+#ifndef VL53L8CX_NB_TARGET_PER_ZONE
+#define 	VL53L8CX_NB_TARGET_PER_ZONE		(1U)
+#endif
 /*
  * @brief The macro below can be used to avoid data conversion into the driver.
  * By default there is a conversion between firmware and user data. Using this macro
@@ -177,19 +132,6 @@ uint8_t VL53L8CX_WrMulti(
 		uint16_t RegisterAdress,
 		uint8_t *p_values,
 		uint32_t size);
-
-/**
- * @brief Optional function, only used to perform an hardware reset of the
- * sensor. This function is not used in the API, but it can be used by the host.
- * This function is not mandatory to fill if user don't want to reset the
- * sensor.
- * @param (VL53L8CX_Platform*) p_platform : Pointer of VL53L8CX platform
- * structure.
- * @return (uint8_t) status : 0 if OK
- */
-
-uint8_t VL53L8CX_Reset_Sensor(
-		VL53L8CX_Platform *p_platform);
 
 /**
  * @brief Mandatory function, used to swap a buffer. The buffer size is always a

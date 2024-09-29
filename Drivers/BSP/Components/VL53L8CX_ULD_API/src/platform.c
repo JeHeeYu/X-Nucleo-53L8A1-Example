@@ -1,86 +1,23 @@
-/*******************************************************************************
-* Copyright (c) 2023, STMicroelectronics - All Rights Reserved
-*
-* This file is part of the VL53L8CX Ultra Lite Driver and is dual licensed,
-* either 'STMicroelectronics Proprietary license'
-* or 'BSD 3-clause "New" or "Revised" License' , at your option.
-*
-********************************************************************************
-*
-* 'STMicroelectronics Proprietary license'
-*
-********************************************************************************
-*
-* License terms: STMicroelectronics Proprietary in accordance with licensing
-* terms at www.st.com/sla0081
-*
-* STMicroelectronics confidential
-* Reproduction and Communication of this document is strictly prohibited unless
-* specifically authorized in writing by STMicroelectronics.
-*
-*
-********************************************************************************
-*
-* Alternatively, the VL53L8CX Ultra Lite Driver may be distributed under the
-* terms of 'BSD 3-clause "New" or "Revised" License', in which case the
-* following provisions apply instead of the ones mentioned above :
-*
-********************************************************************************
-*
-* License terms: BSD 3-clause "New" or "Revised" License.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*
-* 1. Redistributions of source code must retain the above copyright notice, this
-* list of conditions and the following disclaimer.
-*
-* 2. Redistributions in binary form must reproduce the above copyright notice,
-* this list of conditions and the following disclaimer in the documentation
-* and/or other materials provided with the distribution.
-*
-* 3. Neither the name of the copyright holder nor the names of its contributors
-* may be used to endorse or promote products derived from this software
-* without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-* AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-* SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-* CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-* OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*
-*
-*******************************************************************************/
+/**
+  *
+  * Copyright (c) 2021 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
 
 #include "platform.h"
-#include "main.h"
-
-extern I2C_HandleTypeDef 	hi2c1;
 
 uint8_t VL53L8CX_RdByte(
 		VL53L8CX_Platform *p_platform,
 		uint16_t RegisterAdress,
 		uint8_t *p_value)
 {
-	uint8_t status = 0;
-	uint8_t data_write[2];
-	uint8_t data_read[1];
-
-	data_write[0] = (RegisterAdress >> 8) & 0xFF;
-	data_write[1] = RegisterAdress & 0xFF;
-	status = HAL_I2C_Master_Transmit(&hi2c1, p_platform->address, data_write, 2, 100);
-	status = HAL_I2C_Master_Receive(&hi2c1, p_platform->address, data_read, 1, 100);
-	*p_value = data_read[0];
-  
-	return status;
+  return p_platform->Read(p_platform->address, RegisterAdress, p_value, 1U);
 }
 
 uint8_t VL53L8CX_WrByte(
@@ -88,15 +25,7 @@ uint8_t VL53L8CX_WrByte(
 		uint16_t RegisterAdress,
 		uint8_t value)
 {
-	uint8_t data_write[3];
-	uint8_t status = 0;
-
-	data_write[0] = (RegisterAdress >> 8) & 0xFF;
-	data_write[1] = RegisterAdress & 0xFF;
-	data_write[2] = value & 0xFF;
-	status = HAL_I2C_Master_Transmit(&hi2c1,p_platform->address, data_write, 3, 100);
-
-	return status;
+  return p_platform->Write(p_platform->address, RegisterAdress, &value, 1U);
 }
 
 uint8_t VL53L8CX_WrMulti(
@@ -105,9 +34,7 @@ uint8_t VL53L8CX_WrMulti(
 		uint8_t *p_values,
 		uint32_t size)
 {
-	uint8_t status = HAL_I2C_Mem_Write(&hi2c1, p_platform->address, RegisterAdress,
-									I2C_MEMADD_SIZE_16BIT, p_values, size, 65535);
-	return status;
+  return p_platform->Write(p_platform->address, RegisterAdress, p_values, size);
 }
 
 uint8_t VL53L8CX_RdMulti(
@@ -116,32 +43,7 @@ uint8_t VL53L8CX_RdMulti(
 		uint8_t *p_values,
 		uint32_t size)
 {
-	uint8_t status;
-	uint8_t data_write[2];
-	data_write[0] = (RegisterAdress>>8) & 0xFF;
-	data_write[1] = RegisterAdress & 0xFF;
-	status = HAL_I2C_Master_Transmit(&hi2c1, p_platform->address, data_write, 2, 100);
-	status += HAL_I2C_Master_Receive(&hi2c1, p_platform->address, p_values, size, 100);
-
-	return status;
-}
-
-uint8_t VL53L8CX_Reset_Sensor(VL53L8CX_Platform *p_platform)
-{
-	/* Toggle EVK PWR EN board and Lpn pins */
-	HAL_GPIO_WritePin(LPn_C_GPIO_Port, LPn_C_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(PWR_EN_C_GPIO_Port, PWR_EN_C_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(LPn_R_GPIO_Port, LPn_R_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(PWR_EN_R_GPIO_Port, PWR_EN_R_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(LPn_L_GPIO_Port, LPn_L_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(PWR_EN_L_GPIO_Port, PWR_EN_L_Pin, GPIO_PIN_RESET);
-	HAL_Delay(100);
-
-	HAL_GPIO_WritePin(PWR_EN_C_GPIO_Port, PWR_EN_C_Pin, GPIO_PIN_SET);
-	HAL_Delay(100);
-	HAL_GPIO_WritePin(LPn_C_GPIO_Port, LPn_C_Pin, GPIO_PIN_SET);
-	HAL_Delay(100);
-	return 0;
+  return p_platform->Read(p_platform->address, RegisterAdress, p_values, size);
 }
 
 void VL53L8CX_SwapBuffer(
@@ -149,24 +51,29 @@ void VL53L8CX_SwapBuffer(
 		uint16_t 	 	 size)
 {
 	uint32_t i, tmp;
-
+	
 	/* Example of possible implementation using <string.h> */
-	for(i = 0; i < size; i = i + 4)
+	for(i = 0; i < size; i = i + 4) 
 	{
 		tmp = (
 		  buffer[i]<<24)
 		|(buffer[i+1]<<16)
 		|(buffer[i+2]<<8)
 		|(buffer[i+3]);
-
+		
 		memcpy(&(buffer[i]), &tmp, 4);
 	}
-}
+}	
 
 uint8_t VL53L8CX_WaitMs(
 		VL53L8CX_Platform *p_platform,
-               uint32_t TimeMs)
+		uint32_t TimeMs)
 {
-	HAL_Delay(TimeMs);
-	return 0;
+  uint32_t tickstart;
+  tickstart = p_platform->GetTick();
+
+  while ((p_platform->GetTick() - tickstart) < TimeMs);
+
+  return 0;
 }
+
