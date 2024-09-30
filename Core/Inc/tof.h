@@ -14,6 +14,7 @@
 #include "platform.h"
 #include "vl53l8cx_plugin_motion_indicator.h"
 #include "vl53l8cx_plugin_detection_thresholds.h"
+#include "vl53l8cx_plugin_xtalk.h"
 
 #include "common.h"
 
@@ -30,11 +31,14 @@ typedef struct _TOF
 } TOF;
 
 typedef void (*Init)();
+typedef void (*GetDistance)();
 
 typedef struct _TOFInstance
 {
 	Init Init;
+	GetDistance GetDistance;
 } TOFInstance;
+
 
 extern const TOFInstance tofInstance;
 
