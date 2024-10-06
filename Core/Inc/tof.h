@@ -20,6 +20,14 @@
 
 #define RANGING_FREQUENCY	2
 #define INTERGRATION_TIME	10
+#define CALIBRATION_SAMPLING_COUNT	10
+
+typedef struct _PixcelDatas
+{
+	u16 maxDistance;
+	u16 minDistance;
+	u16 averageDistance;
+} PixcelDatas;
 
 typedef struct _TOF
 {
@@ -28,10 +36,11 @@ typedef struct _TOF
 	VL53L8CX_ResultsData results;
 	int status;
 	u8 isAlive;
+	PixcelDatas pixcelData[64];
 } TOF;
 
 typedef void (*Init)();
-typedef void (*GetDistance)();
+typedef i16* (*GetDistance)();
 
 typedef struct _TOFInstance
 {
