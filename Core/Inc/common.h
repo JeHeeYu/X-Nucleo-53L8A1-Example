@@ -14,5 +14,6 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 
 typedef int16_t i16;
+typedef int32_t i32;
 
 #endif /* INC_COMMON_H_ */

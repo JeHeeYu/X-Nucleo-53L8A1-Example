@@ -10,53 +10,61 @@
 static void TOFInit();
 static i16* GetTOFDistance();
 static void TOFCalibration();
+static void PollTOFProcess();
 
 TOF tof =
 {
-	.config = {{ 0 }},
-	.motionConfig = { 0 },
-	.results = { 0 },
-	.status = 0,
-	.isAlive = 0,
+    .config = {{ 0 }},
+    .motionConfig = { 0 },
+    .results = { 0 },
+    .status = 0,
+    .isAlive = 0,
 };
 
 static void TOFInit()
 {
-	tof.config.platform.address = VL53L8CX_DEFAULT_I2C_ADDRESS;
+    tof.config.platform.address = VL53L8CX_DEFAULT_I2C_ADDRESS;
 
-	VL53L8CX_Reset_Sensor(&(tof.config.platform));
+    VL53L8CX_Reset_Sensor(&(tof.config.platform));
 
-	//check VL53L8CX sensor connected
-	tof.status = vl53l8cx_is_alive(&tof.config, &tof.isAlive);
+    tof.status = vl53l8cx_is_alive(&tof.config, &tof.isAlive);
 
-	if(!tof.isAlive || tof.status) {
-		printf("TOF not detected at requested address\n\r");
-		return;
-	}
+    if(!tof.isAlive || tof.status) {
+        printf("TOF not detected at requested address\n\r");
+        return;
+    }
 
-	// initialize VL53L8CX sensor
-	tof.status = vl53l8cx_init(&tof.config);
+    tof.status = vl53l8cx_init(&tof.config);
 
-	if(tof.status) {
-		printf("VL53L8CX ULD loading failed status : %u\n\r", tof.status);
-		return;
-	}
+    if(tof.status) {
+        printf("VL53L8CX ULD loading failed status : %u\n\r", tof.status);
+        return;
+    }
 
-	printf("VL53L8CX ULD loading success\n\r");
+    printf("VL53L8CX ULD loading success\n\r");
 
-	// motion indicator with resolution 8x8
-	tof.status = vl53l8cx_motion_indicator_init(&tof.config, &tof.motionConfig, VL53L8CX_RESOLUTION_8X8);
+    tof.status = vl53l8cx_motion_indicator_init(&tof.config, &tof.motionConfig, VL53L8CX_RESOLUTION_8X8);
 
-	if(tof.status) {
-		printf("motion indicator failed status : %u\n\r", tof.status);
-	}
+    if(tof.status) {
+        printf("motion indicator failed status : %u\n\r", tof.status);
+    }
 
-	tof.status = vl53l8cx_set_resolution(&tof.config, VL53L8CX_RESOLUTION_8X8);
-	tof.status = vl53l8cx_set_ranging_mode(&tof.config, VL53L8CX_RANGING_MODE_AUTONOMOUS);
-	tof.status = vl53l8cx_set_ranging_frequency_hz(&tof.config, RANGING_FREQUENCY);
-	tof.status = vl53l8cx_set_integration_time_ms(&tof.config, INTERGRATION_TIME);
+    tof.status = vl53l8cx_set_resolution(&tof.config, VL53L8CX_RESOLUTION_8X8);
+    tof.status = vl53l8cx_set_ranging_mode(&tof.config, VL53L8CX_RANGING_MODE_AUTONOMOUS);
+    tof.status = vl53l8cx_set_ranging_frequency_hz(&tof.config, RANGING_FREQUENCY);
+    tof.status = vl53l8cx_set_integration_time_ms(&tof.config, INTERGRATION_TIME);
 
-	TOFCalibration();
+    for (u8 i = 0; i < 64; i++) {
+        tof.movingAverage[i].index = 0;
+        tof.movingAverage[i].sum = 0;
+        for (u8 j = 0; j < MOVING_AVERAGE_WINDOW; j++) {
+            tof.movingAverage[i].samples[j] = 0;
+        }
+        tof.maxDistance[i] = 0;
+        tof.minDistance[i] = 0xFFFF;
+    }
+
+    TOFCalibration();
 }
 
 i16* GetTOFDistance()
@@ -81,7 +89,22 @@ i16* GetTOFDistance()
                         int zoneIndex = row * 8 + col;
                         distance[VL53L8CX_NB_TARGET_PER_ZONE * zoneIndex] = tof.results.distance_mm[VL53L8CX_NB_TARGET_PER_ZONE * zoneIndex];
 
-                        printf("%4d mm ", distance[VL53L8CX_NB_TARGET_PER_ZONE * zoneIndex]);
+                        u8 currentIndex = tof.movingAverage[zoneIndex].index;
+                        tof.movingAverage[zoneIndex].sum -= tof.movingAverage[zoneIndex].samples[currentIndex];
+                        tof.movingAverage[zoneIndex].samples[currentIndex] = distance[VL53L8CX_NB_TARGET_PER_ZONE * zoneIndex];
+                        tof.movingAverage[zoneIndex].sum += tof.movingAverage[zoneIndex].samples[currentIndex];
+                        tof.movingAverage[zoneIndex].index = (currentIndex + 1) % MOVING_AVERAGE_WINDOW;
+
+                        i16 avgDistance = tof.movingAverage[zoneIndex].sum / MOVING_AVERAGE_WINDOW;
+
+                        if (avgDistance > tof.maxDistance[zoneIndex]) {
+                            tof.maxDistance[zoneIndex] = avgDistance;
+                        }
+                        if (avgDistance < tof.minDistance[zoneIndex]) {
+                            tof.minDistance[zoneIndex] = avgDistance;
+                        }
+
+                        printf("%4d mm (Avg: %4d mm) ", distance[VL53L8CX_NB_TARGET_PER_ZONE * zoneIndex], avgDistance);
                     }
                     printf("\n\r");
                 }
@@ -102,73 +125,75 @@ i16* GetTOFDistance()
     return distance;
 }
 
-static void TOFCalibration()
+static void PollTOFProcess()
 {
-    u16 reflectancPercent = 50;
-    u8 samples = 10;
-    u16 distance = 600;
+    GetTOFDistance();
 
-    printf("Starting TOF calibration...\n\r");
+    for (u8 j = 0; j < 64; j++) {
+        i16 avgDistance = tof.movingAverage[j].sum / MOVING_AVERAGE_WINDOW;
+        i16 maxDist = tof.maxDistance[j];
+        i16 minDist = tof.minDistance[j];
+        i16 threshold = (maxDist - minDist) * DISTANCE_THRESHOLD_PERCENT / 100;
 
-    tof.status = vl53l8cx_calibrate_xtalk(&tof.config, reflectancPercent, samples, distance);
+        if (avgDistance < (tof.pixcelData[j].averageDistance - threshold) ||
+            avgDistance > (tof.pixcelData[j].averageDistance + threshold)) {
+            printf("Pixel %u: Noise detected, skipping value\n", j);
+            continue;
+        }
 
-    if (tof.status != VL53L8CX_STATUS_OK) {
-        printf("TOF calibration failed with status : %u\n\r", tof.status);
-    }
-    else {
-        printf("TOF calibration completed successfully\n\r");
-
-        u8 xtalkData[VL53L8CX_XTALK_BUFFER_SIZE];
-
-        tof.status = vl53l8cx_get_caldata_xtalk(&tof.config, xtalkData);
-
-        if (tof.status != VL53L8CX_STATUS_OK) {
-            printf("Failed to retrieve Xtalk calibration data : %u\n\r", tof.status);
+        if (avgDistance >= maxDist - threshold) {
+            printf("Pixel %u: No  detected (Distance: %d mm)\n", j, avgDistance);
+        }
+        else if (avgDistance < minDist + threshold) {
+            printf("Pixel %u: detected (Distance: %d mm)\n", j, avgDistance);
         }
         else {
-            printf("Xtalk calibration data retrieved successfully\n\r");
+            printf("Pixel %u: detected (Distance: %d mm)\n", j, avgDistance);
         }
+    }
+}
 
-        tof.status = vl53l8cx_set_caldata_xtalk(&tof.config, xtalkData);
+static void TOFCalibration()
+{
+    printf("Starting TOF calibration...\n\r");
+
+    for (u8 j = 0; j < 64; j++) {
+        tof.pixcelData[j].maxDistance = 0;
+        tof.pixcelData[j].minDistance = 0xFFFF;
+        tof.pixcelData[j].averageDistance = 0;
+    }
+
+    for (u8 i = 0; i < CALIBRATION_SAMPLING_COUNT; i++) {
+        i16* distances = GetTOFDistance();
 
         for (u8 j = 0; j < 64; j++) {
-            tof.pixcelData[j].maxDistance = 0;
-            tof.pixcelData[j].minDistance = 0xFFFF;
-            tof.pixcelData[j].averageDistance = 0;
-        }
+            u16 currentDistance = distances[j];
 
-        for (u8 i = 0; i < CALIBRATION_SAMPLING_COUNT; i++) {
-            i16* distances = GetTOFDistance();
-
-            for (u8 j = 0; j < VL53L8CX_RESOLUTION_8X8; j++) {
-                u16 currentDistance = distances[j];
-
-                if (currentDistance > tof.pixcelData[j].maxDistance) {
-                    tof.pixcelData[j].maxDistance = currentDistance;
-                }
-
-                if (currentDistance < tof.pixcelData[j].minDistance) {
-                    tof.pixcelData[j].minDistance = currentDistance;
-                }
-
-                tof.pixcelData[j].averageDistance += currentDistance;
+            if (currentDistance > tof.pixcelData[j].maxDistance) {
+                tof.pixcelData[j].maxDistance = currentDistance;
             }
-        }
 
-        for (u8 j = 0; j < VL53L8CX_RESOLUTION_8X8; j++) {
-            tof.pixcelData[j].averageDistance /= CALIBRATION_SAMPLING_COUNT;
-        }
+            if (currentDistance < tof.pixcelData[j].minDistance) {
+                tof.pixcelData[j].minDistance = currentDistance;
+            }
 
-        printf("Calibration results\n");
-        for (u8 j = 0; j < 64; j++) {
-            printf("Pixel %u - Max: %u mm, Min: %u mm, Avg: %u mm\n",
-                   j, tof.pixcelData[j].maxDistance, tof.pixcelData[j].minDistance, tof.pixcelData[j].averageDistance);
+            tof.pixcelData[j].averageDistance += currentDistance;
         }
+    }
+
+    for (u8 j = 0; j < 64; j++) {
+        tof.pixcelData[j].averageDistance /= CALIBRATION_SAMPLING_COUNT;
+    }
+
+    printf("Calibration results\n");
+    for (u8 j = 0; j < 64; j++) {
+        printf("Pixel %u - Max: %u mm, Min: %u mm, Avg: %u mm\n",
+               j, tof.pixcelData[j].maxDistance, tof.pixcelData[j].minDistance, tof.pixcelData[j].averageDistance);
     }
 }
 
 const TOFInstance tofInstance =
 {
     TOFInit,
-	GetTOFDistance,
+    PollTOFProcess,
 };
